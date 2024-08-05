@@ -1,0 +1,3 @@
+/Users/jankoch/workspace/sockets/cmake-build-debug/CMakeFiles/sockets.dir
+/Users/jankoch/workspace/sockets/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/jankoch/workspace/sockets/cmake-build-debug/CMakeFiles/rebuild_cache.dir
