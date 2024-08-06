@@ -56,7 +56,6 @@ int main() {
     }
 
     // accept
-
     for (;;) {
         peer_addr_size = sizeof peer_addr;
         int new_fd = accept(sfd, (struct sockaddr*) &peer_addr, &peer_addr_size);
@@ -65,6 +64,7 @@ int main() {
             return -1;
         }
 
+        // read and write
         ssize_t data_size = 1;
         while(data_size != 0) {
             printf("Reading data.\n");
@@ -83,6 +83,4 @@ int main() {
         printf("All data read. Closing connection.\n");
         close(new_fd);
     }
-
-    return 0;
 }
