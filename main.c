@@ -3,10 +3,12 @@
 #include <netdb.h>
 #include <string.h>
 #include <libc.h>
+#include <sys/poll.h>
 
 #define BUF_SIZE 50
 #define BACKLOG 10
-#define PORT "8081"
+#define PORT "8080"
+#define MAX_CLIENTS 1000
 
 int main() {
     // socket
@@ -40,6 +42,8 @@ int main() {
         printf("Failed to create socket.");
         return -1;
     }
+    if (setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0)
+        return -1;
 
     // bind
     int bound = bind(sfd, result->ai_addr, result->ai_addrlen);
@@ -55,32 +59,55 @@ int main() {
         return -1;
     }
 
-    // accept
+    // add main socket to poll
+    struct pollfd *pfds;
+    pfds = calloc(MAX_CLIENTS, sizeof(struct pollfd));
+
+    pfds[0].fd = sfd;
+    pfds[0].events = POLL_IN;
+    nfds_t nfds = 1;
+
+
+    printf("Starting event loop.\n");
+
     for (;;) {
-        peer_addr_size = sizeof peer_addr;
-        int new_fd = accept(sfd, (struct sockaddr*) &peer_addr, &peer_addr_size);
-        if (new_fd == -1) {
-            printf("Failed to accept.");
+        int polled = poll(pfds, nfds, MAX_CLIENTS);
+        if (polled == -1) {
+            printf("Failed to poll.");
             return -1;
         }
 
-        // read and write
-        ssize_t data_size = 1;
-        while(data_size != 0) {
-            printf("Reading data.\n");
-            data_size = recv(new_fd, buffer, BUF_SIZE, 0);
-            printf("data size: %zi\n", data_size);
-
-            if (data_size == -1) {
-                printf("Error on read.\n");
-                return -1;
-            } else {
-                printf("Message received. Mirroring back.\n");
-                send(new_fd, buffer, data_size, 0);
+        if (pfds[0].revents & POLL_IN) {
+            printf("New incoming socket connection.\n");
+            // accept
+            int new_fd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_size);
+            if (new_fd != -1) {
+                printf("Accepted new socket.\n");
+                pfds[nfds].fd = new_fd;
+                pfds[nfds].events = POLL_IN;
+                nfds++;
             }
-            printf("\n");
         }
-        printf("All data read. Closing connection.\n");
-        close(new_fd);
+
+        printf("Number of connected sockets: %i\n", nfds - 1);
+
+        for (nfds_t i = 1; i < nfds; i++) {
+
+            if (pfds[i].revents & POLL_IN) {
+                printf("Data ready on socket [%i].\n", i);
+                ssize_t data_size = recv(pfds[i].fd, buffer, BUF_SIZE, 0);
+                if (data_size == -1) {
+                    printf("Error on read.\n");
+                    return -1;
+                } else if (data_size == 0) {
+                    printf("Closing socket [%i].\n", nfds);
+                    pfds[i] = pfds[--nfds];
+                }
+                else {
+                    printf("Message received. Mirroring back.\n");
+                    send(pfds[i].fd, buffer, data_size, 0);
+                }
+            }
+        }
     }
 }
