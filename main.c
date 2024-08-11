@@ -5,19 +5,93 @@
 #include <libc.h>
 #include <sys/poll.h>
 
-#define BUF_SIZE 50
+#define BUF_SIZE 1024
 #define BACKLOG 10
 #define PORT "8080"
 #define MAX_CLIENTS 1000
 
-int main() {
-    // socket
-    // bind
-    // listen
-    // accept
-    // read / write
-    // close
 
+enum HttpMethod {
+    GET, POST
+};
+
+enum HttpVersion {
+    VERSION_1_1, UNDEFINED
+};
+
+struct http_request {
+    enum HttpMethod http_method;
+    char *request_path;
+    enum HttpVersion http_version;
+};
+
+struct http_response {
+    enum HttpMethod http_method;
+    char *message_body;
+    enum HttpVersion http_version;
+
+};
+
+char *response_as_string(struct http_response response) {
+    char *response_array = "";
+
+    if (response.http_version == VERSION_1_1) {
+        char *ptr = realloc(response_array, strlen(response_array) + strlen("HTTP/1.1"));
+        strcat(ptr, "HTTP/1.1");
+    }
+
+    return "1";
+}
+
+struct http_request parse_http_request(char *buffer, ssize_t data_size) {
+    printf("Parsing http request.\n");
+
+    enum HttpMethod httpMethod;
+    char *token = strtok(buffer, " ");
+    if (strcmp(token, "GET") == 0) {
+        httpMethod = GET;
+    } else {
+        httpMethod = POST;
+    }
+    char *requested_path = strtok(NULL, " ");
+    char *http_version = strtok(NULL, "\r\n");
+    enum HttpVersion httpVersion;
+    if (strcmp(http_version, "HTTP/1.1") == 0) {
+        httpVersion = VERSION_1_1;
+    } else {
+        httpVersion = UNDEFINED;
+    }
+
+    struct http_request request = {httpMethod, requested_path, httpVersion};
+
+    printf("%i\n", request.http_method);
+    printf("%s\n", request.request_path);
+    printf("%i\n", request.http_version);
+
+
+    char *strtok_return;
+    while ((strtok_return = strtok(NULL, "\r\n")) != NULL) {
+        printf("%s\n", strtok_return);
+    }
+
+    printf("Parsing done.\n");
+    return request;
+}
+
+void create_http_response(struct http_request request) {
+
+    if (access(request.request_path, F_OK) != 0) {
+        // file does not exist -> return 404
+    }
+
+    int fd = open(request.request_path, O_RDONLY, 0);
+    if (fd == -1) {
+        printf("Failed to open file.\n");
+    }
+
+}
+
+int main() {
     char buffer[BUF_SIZE];
     struct addrinfo hints;
     struct addrinfo *result;
@@ -96,18 +170,26 @@ int main() {
             if (pfds[i].revents & POLL_IN) {
                 printf("Data ready on socket [%i].\n", i);
                 ssize_t data_size = recv(pfds[i].fd, buffer, BUF_SIZE, 0);
+
+
                 if (data_size == -1) {
                     printf("Error on read.\n");
-                    return -1;
+                    printf("Closing socket [%i].\n", i);
+                    pfds[i] = pfds[--nfds];
                 } else if (data_size == 0) {
-                    printf("Closing socket [%i].\n", nfds);
+                    printf("Closing socket [%i].\n", i);
                     pfds[i] = pfds[--nfds];
                 }
                 else {
                     printf("Message received. Mirroring back.\n");
-                    send(pfds[i].fd, buffer, data_size, 0);
+                    struct http_request parsed_request = parse_http_request(buffer, data_size);
+
+
+                    char *response = "HTTP/1.1 200 OK \r\nContent-Length:1\r\n\r\n2";
+                    send(pfds[i].fd, response, data_size, 0);
                 }
             }
         }
     }
+
 }
