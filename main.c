@@ -19,6 +19,10 @@ enum HttpVersion {
     VERSION_1_1, UNDEFINED
 };
 
+enum HttpStatus {
+    NOT_FOUND, OK
+};
+
 struct http_request {
     enum HttpMethod http_method;
     char *request_path;
@@ -29,18 +33,29 @@ struct http_response {
     enum HttpMethod http_method;
     char *message_body;
     enum HttpVersion http_version;
-
+    enum HttpStatus httpStatus;
+    unsigned long content_length;
 };
 
 char *response_as_string(struct http_response response) {
-    char *response_array = "";
+    char *http_version  = "HTTP/1.1";
+    char *status_code = "200 OK";
 
-    if (response.http_version == VERSION_1_1) {
-        char *ptr = realloc(response_array, strlen(response_array) + strlen("HTTP/1.1"));
-        strcat(ptr, "HTTP/1.1");
-    }
+    char content_length_header[100];
+    sprintf(content_length_header, "Content-Length: %lu", response.content_length);
+    printf("The string is : %s", content_length_header);
 
-    return "1";
+    char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n") + strlen(content_length_header) + +strlen("\r\n\r\n") +
+                                  strlen(response.message_body) + 1);
+
+    strcpy(result, http_version);
+    strcat(result, " ");
+    strcat(result, status_code);
+    strcat(result, "\r\n");
+    strcat(result, content_length_header);
+    strcat(result, "\r\n\r\n");
+    strcat(result, response.message_body);
+    return result;
 }
 
 struct http_request parse_http_request(char *buffer, ssize_t data_size) {
@@ -54,6 +69,8 @@ struct http_request parse_http_request(char *buffer, ssize_t data_size) {
         httpMethod = POST;
     }
     char *requested_path = strtok(NULL, " ");
+    if (requested_path[0] == '/') requested_path++;
+
     char *http_version = strtok(NULL, "\r\n");
     enum HttpVersion httpVersion;
     if (strcmp(http_version, "HTTP/1.1") == 0) {
@@ -78,17 +95,43 @@ struct http_request parse_http_request(char *buffer, ssize_t data_size) {
     return request;
 }
 
-void create_http_response(struct http_request request) {
+struct http_response create_http_response(struct http_request request) {
 
-    if (access(request.request_path, F_OK) != 0) {
-        // file does not exist -> return 404
+    struct http_response response;
+    response.http_version = VERSION_1_1;
+    response.httpStatus = OK;
+    char *read_buffer;
+    long file_size;
+
+    char *directory_escape = "../";
+
+    char *result = malloc(strlen(directory_escape) + strlen(request.request_path) + 1);
+    strcpy(result, directory_escape);
+    strcat(result, request.request_path);
+    FILE *fd = fopen(result, "rb");
+    if (fd == NULL) {
+        printf("Error: Failed to open file '%s'.\n", request.request_path);
+        response.httpStatus = NOT_FOUND;
+        return response;
     }
 
-    int fd = open(request.request_path, O_RDONLY, 0);
-    if (fd == -1) {
-        printf("Failed to open file.\n");
-    }
+    fseek(fd, 0L, SEEK_END);
+    file_size = ftell(fd);
+    rewind(fd);
 
+    read_buffer = calloc(1, file_size + 1);
+    if (!read_buffer) fclose(fd), fputs("memory alloc fails", stderr);
+
+    if (1 != fread(read_buffer, file_size, 1, fd))
+        fclose(fd), fputs("entire read fails", stderr);
+
+
+    fclose(fd);
+
+    response.message_body = read_buffer;
+    response.content_length = strlen(read_buffer);
+
+    return response;
 }
 
 int main() {
@@ -179,14 +222,14 @@ int main() {
                 } else if (data_size == 0) {
                     printf("Closing socket [%i].\n", i);
                     pfds[i] = pfds[--nfds];
-                }
-                else {
+                } else {
                     printf("Message received. Mirroring back.\n");
                     struct http_request parsed_request = parse_http_request(buffer, data_size);
+                    struct http_response response = create_http_response(parsed_request);
 
+                    char *response_as_str = response_as_string(response);
 
-                    char *response = "HTTP/1.1 200 OK \r\nContent-Length:1\r\n\r\n2";
-                    send(pfds[i].fd, response, data_size, 0);
+                    send(pfds[i].fd, response_as_str, strlen(response_as_str), 0);
                 }
             }
         }
