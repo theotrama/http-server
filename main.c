@@ -31,7 +31,6 @@ struct http_request {
 
 struct http_response {
     enum HttpMethod http_method;
-    char *message_body;
     enum HttpVersion http_version;
     enum HttpStatus httpStatus;
     unsigned long content_length;
@@ -43,10 +42,9 @@ char *response_as_string(struct http_response response) {
 
     char content_length_header[100];
     sprintf(content_length_header, "Content-Length: %lu", response.content_length);
-    printf("The string is : %s", content_length_header);
 
     char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n") + strlen(content_length_header) + +strlen("\r\n\r\n") +
-                                  strlen(response.message_body) + 1);
+                                  response.content_length + 1);
 
     strcpy(result, http_version);
     strcat(result, " ");
@@ -54,7 +52,6 @@ char *response_as_string(struct http_response response) {
     strcat(result, "\r\n");
     strcat(result, content_length_header);
     strcat(result, "\r\n\r\n");
-    strcat(result, response.message_body);
     return result;
 }
 
@@ -100,7 +97,6 @@ struct http_response create_http_response(struct http_request request) {
     struct http_response response;
     response.http_version = VERSION_1_1;
     response.httpStatus = OK;
-    char *read_buffer;
     long file_size;
 
     char *directory_escape = "../";
@@ -118,21 +114,44 @@ struct http_response create_http_response(struct http_request request) {
     fseek(fd, 0L, SEEK_END);
     file_size = ftell(fd);
     rewind(fd);
-
-    read_buffer = calloc(1, file_size + 1);
-    if (!read_buffer) fclose(fd), fputs("memory alloc fails", stderr);
-
-    if (1 != fread(read_buffer, file_size, 1, fd))
-        fclose(fd), fputs("entire read fails", stderr);
-
-
-    fclose(fd);
-
-    response.message_body = read_buffer;
-    response.content_length = strlen(read_buffer);
-
+    response.content_length = file_size;
     return response;
 }
+
+long get_file_size(char *file_name) {
+    FILE *fd = fopen(file_name, "rb");
+    if (fd == NULL) {
+        printf("Error: Failed to open file '%s'.\n", file_name);
+        return -1;
+    }
+
+    fseek(fd, 0L, SEEK_END);
+    return ftell(fd);
+}
+
+void send_response(int fd, struct http_request request) {
+    long file_size = get_file_size(request.request_path);
+    if (file_size == -1) {
+
+    }
+
+    char *http_version  = "HTTP/1.1";
+    char *status_code = "200 OK";
+    char content_length_header[100];
+    sprintf(content_length_header, "Content-Length: %lu", file_size);
+
+    char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n") + strlen(content_length_header) + +strlen("\r\n\r\n"));
+    strcpy(result, http_version);
+    strcat(result, " ");
+    strcat(result, status_code);
+    strcat(result, "\r\n");
+    strcat(result, content_length_header);
+    strcat(result, "\r\n\r\n");
+
+    send(fd, result, strlen(result),0 );
+
+}
+
 
 int main() {
     char buffer[BUF_SIZE];
@@ -224,12 +243,14 @@ int main() {
                     pfds[i] = pfds[--nfds];
                 } else {
                     printf("Message received. Mirroring back.\n");
+
+
                     struct http_request parsed_request = parse_http_request(buffer, data_size);
                     struct http_response response = create_http_response(parsed_request);
+                    send_response(pfds[i].fd, parsed_request);
 
                     char *response_as_str = response_as_string(response);
 
-                    send(pfds[i].fd, response_as_str, strlen(response_as_str), 0);
                 }
             }
         }
