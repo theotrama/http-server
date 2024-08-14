@@ -100,15 +100,6 @@ int file_exists(char *file_name) {
 }
 
 
-char *setup_response_headers(char *http_version, char *status_code) {
-    char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n"));
-    strcpy(result, http_version);
-    strcat(result, " ");
-    strcat(result, status_code);
-    strcat(result, "\r\n");
-    return result;
-}
-
 char *response_as_string(char *file_content, char *status_code, char *status_response) {
     char content_length_header[100];
     sprintf(content_length_header, "Content-Length: %lu", strlen(file_content));
@@ -240,5 +231,4 @@ int main() {
             }
         }
     }
-
 }
