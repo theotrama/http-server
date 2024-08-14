@@ -36,25 +36,6 @@ struct http_response {
     unsigned long content_length;
 };
 
-char *response_as_string(struct http_response response) {
-    char *http_version  = "HTTP/1.1";
-    char *status_code = "200 OK";
-
-    char content_length_header[100];
-    sprintf(content_length_header, "Content-Length: %lu", response.content_length);
-
-    char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n") + strlen(content_length_header) + +strlen("\r\n\r\n") +
-                                  response.content_length + 1);
-
-    strcpy(result, http_version);
-    strcat(result, " ");
-    strcat(result, status_code);
-    strcat(result, "\r\n");
-    strcat(result, content_length_header);
-    strcat(result, "\r\n\r\n");
-    return result;
-}
-
 struct http_request parse_http_request(char *buffer, ssize_t data_size) {
     printf("Parsing http request.\n");
 
@@ -67,6 +48,10 @@ struct http_request parse_http_request(char *buffer, ssize_t data_size) {
     }
     char *requested_path = strtok(NULL, " ");
     if (requested_path[0] == '/') requested_path++;
+    char *directory_escape = "../";
+    char *result = malloc(strlen("../") + strlen(requested_path) + 1);
+    strcpy(result, directory_escape);
+    strcat(result, requested_path);
 
     char *http_version = strtok(NULL, "\r\n");
     enum HttpVersion httpVersion;
@@ -76,7 +61,7 @@ struct http_request parse_http_request(char *buffer, ssize_t data_size) {
         httpVersion = UNDEFINED;
     }
 
-    struct http_request request = {httpMethod, requested_path, httpVersion};
+    struct http_request request = {httpMethod, result, httpVersion};
 
     printf("%i\n", request.http_method);
     printf("%s\n", request.request_path);
@@ -92,66 +77,72 @@ struct http_request parse_http_request(char *buffer, ssize_t data_size) {
     return request;
 }
 
-struct http_response create_http_response(struct http_request request) {
-
-    struct http_response response;
-    response.http_version = VERSION_1_1;
-    response.httpStatus = OK;
-    long file_size;
-
-    char *directory_escape = "../";
-
-    char *result = malloc(strlen(directory_escape) + strlen(request.request_path) + 1);
-    strcpy(result, directory_escape);
-    strcat(result, request.request_path);
-    FILE *fd = fopen(result, "rb");
-    if (fd == NULL) {
-        printf("Error: Failed to open file '%s'.\n", request.request_path);
-        response.httpStatus = NOT_FOUND;
-        return response;
-    }
-
-    fseek(fd, 0L, SEEK_END);
-    file_size = ftell(fd);
-    rewind(fd);
-    response.content_length = file_size;
-    return response;
-}
-
-long get_file_size(char *file_name) {
-    FILE *fd = fopen(file_name, "rb");
-    if (fd == NULL) {
+char *read_complete_file(char *file_name) {
+    FILE *fp = fopen(file_name, "rb");
+    if (fp == NULL) {
         printf("Error: Failed to open file '%s'.\n", file_name);
-        return -1;
+        return "";
     }
 
-    fseek(fd, 0L, SEEK_END);
-    return ftell(fd);
+    fseek(fp, 0L, SEEK_END);
+    long file_size = ftell(fp);
+    rewind(fp);
+
+    char *result = malloc(file_size);
+    fread(result, file_size, 1, fp);
+
+    return result;
+
 }
 
-void send_response(int fd, struct http_request request) {
-    long file_size = get_file_size(request.request_path);
-    if (file_size == -1) {
+int file_exists(char *file_name) {
+    return access(file_name, F_OK) == 0 ? 0 : -1;
+}
 
-    }
 
-    char *http_version  = "HTTP/1.1";
-    char *status_code = "200 OK";
-    char content_length_header[100];
-    sprintf(content_length_header, "Content-Length: %lu", file_size);
-
-    char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n") + strlen(content_length_header) + +strlen("\r\n\r\n"));
+char *setup_response_headers(char *http_version, char *status_code) {
+    char *result = malloc(strlen(http_version) + strlen(" ") + strlen(status_code) + strlen("\r\n"));
     strcpy(result, http_version);
     strcat(result, " ");
     strcat(result, status_code);
     strcat(result, "\r\n");
-    strcat(result, content_length_header);
-    strcat(result, "\r\n\r\n");
-
-    send(fd, result, strlen(result),0 );
-
+    return result;
 }
 
+char *response_as_string(char *file_content, char *status_code, char *status_response) {
+    char content_length_header[100];
+    sprintf(content_length_header, "Content-Length: %lu", strlen(file_content));
+    char *result = malloc(
+            strlen("HTTP/1.1") + strlen(" ") + strlen(status_code) + strlen(" ") + strlen(status_response) +
+            strlen("\r\n") + strlen(content_length_header) + strlen("\r\n\r\n") +
+            strlen(file_content) + 1);
+
+    strcpy(result, "HTTP/1.1");
+    strcat(result, " ");
+    strcat(result, status_code);
+    strcat(result, " ");
+    strcat(result, status_response);
+    strcat(result, "\r\n");
+    strcat(result, content_length_header);
+    strcat(result, "\r\n\r\n");
+    strcat(result, file_content);
+    return result;
+}
+
+void send_response(int fd, struct http_request request) {
+    char *response;
+    long file_there = file_exists(request.request_path);
+    if (file_there == -1) {
+        char *file_content = read_complete_file("../404.html");
+        response = response_as_string(file_content, "404", "NOT_FOUND");
+    } else {
+        char *file_content = read_complete_file(request.request_path);
+        response = response_as_string(file_content, "200", "OK");
+    }
+
+    send(fd, response, strlen(response), 0);
+    free(response);
+}
 
 int main() {
     char buffer[BUF_SIZE];
@@ -243,14 +234,8 @@ int main() {
                     pfds[i] = pfds[--nfds];
                 } else {
                     printf("Message received. Mirroring back.\n");
-
-
                     struct http_request parsed_request = parse_http_request(buffer, data_size);
-                    struct http_response response = create_http_response(parsed_request);
                     send_response(pfds[i].fd, parsed_request);
-
-                    char *response_as_str = response_as_string(response);
-
                 }
             }
         }
