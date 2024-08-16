@@ -4,6 +4,7 @@
 #include <string.h>
 #include <libc.h>
 #include <sys/poll.h>
+#include <stdbool.h>
 
 #define BUF_SIZE 1024
 #define BACKLOG 10
@@ -92,13 +93,7 @@ char *read_complete_file(char *file_name) {
     fread(result, file_size, 1, fp);
 
     return result;
-
 }
-
-int file_exists(char *file_name) {
-    return access(file_name, F_OK) == 0 ? 0 : -1;
-}
-
 
 char *response_as_string(char *file_content, char *status_code, char *status_response) {
     char content_length_header[100];
@@ -122,17 +117,20 @@ char *response_as_string(char *file_content, char *status_code, char *status_res
 
 void send_response(int fd, struct http_request request) {
     char *response;
-    long file_there = file_exists(request.request_path);
-    if (file_there == -1) {
-        char *file_content = read_complete_file("../404.html");
+    char *file_content;
+    int file_exists = access(request.request_path, F_OK);
+
+    if (file_exists == -1) {
+        file_content = read_complete_file("../404.html");
         response = response_as_string(file_content, "404", "NOT_FOUND");
     } else {
-        char *file_content = read_complete_file(request.request_path);
+        file_content = read_complete_file(request.request_path);
         response = response_as_string(file_content, "200", "OK");
     }
 
     send(fd, response, strlen(response), 0);
     free(response);
+    free(file_content);
 }
 
 int main() {
@@ -214,7 +212,6 @@ int main() {
             if (pfds[i].revents & POLL_IN) {
                 printf("Data ready on socket [%i].\n", i);
                 ssize_t data_size = recv(pfds[i].fd, buffer, BUF_SIZE, 0);
-
 
                 if (data_size == -1) {
                     printf("Error on read.\n");
