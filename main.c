@@ -49,8 +49,8 @@ struct http_request parse_http_request(char *buffer, ssize_t data_size) {
     }
     char *requested_path = strtok(NULL, " ");
     if (requested_path[0] == '/') requested_path++;
-    char *directory_escape = "../";
-    char *result = malloc(strlen("../") + strlen(requested_path) + 1);
+    char *directory_escape = "../static/";
+    char *result = malloc(strlen(directory_escape) + strlen(requested_path) + 1);
     strcpy(result, directory_escape);
     strcat(result, requested_path);
 
@@ -121,7 +121,7 @@ void send_response(int fd, struct http_request request) {
     int file_exists = access(request.request_path, F_OK);
 
     if (file_exists == -1) {
-        file_content = read_complete_file("../404.html");
+        file_content = read_complete_file("../static/404.html");
         response = response_as_string(file_content, "404", "NOT_FOUND");
     } else {
         file_content = read_complete_file(request.request_path);
