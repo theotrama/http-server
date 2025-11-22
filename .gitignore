@@ -1,55 +1,33 @@
-# Prerequisites
-*.d
-
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
+# Compiled binaries
+mm_explicit
 *.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+*.o
+*.asan
 
-# Debug files
+# Backup files
+*~
+*.swp
+
+# MacOS specific
+.DS_Store
+
+# macOS debug symbols
 *.dSYM/
-*.su
-*.idb
-*.pdb
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+# Build directories
+build/
 
+# IDE
 .idea/
-cmake-build-debug/
+
+# ----------------------------
+# draw.io backup files
+# ----------------------------
+*.bkp
+*.bak
+*.backup
+*.tmp
+*~   # common editor backups
+*.bkp
+*.dtmp
+
