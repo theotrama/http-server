@@ -3,6 +3,7 @@ mm_explicit
 *.out
 *.o
 *.asan
+*.r
 
 # Backup files
 *~
