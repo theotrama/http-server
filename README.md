@@ -1,37 +1,31 @@
 # Threads, sockets, and HTTP
 
-This week's learning session was focussed on threads. Last week I was working on understanding processes and built my own mini shell.
-Naturally, threads were the next step. They offer a nice way to introduce concurrency into your application without the giant overhead as processes.
-They also make data sharing much simpler as threads are not as strictly encapsulated as processes where each process
-has its own stack, variables, and heap and the only way to communicate is via interprocess communication (IPC). Threads are always
-attached to one process and there is no hierarchy between threads.
-
-
-
+This week we dove into threads. Last week, I explored processes and built a mini shell, so threads were the natural next
+step. They let you introduce concurrency into your application without the heavy overhead of processes. Threads also
+make data sharing simpler: unlike processes, which have separate stacks, heaps, and variables and communicate only via
+IPC, threads share the same memory space within a process. Each thread belongs to a process, but there’s no hierarchy
+between threads.
 
 ## Mutexes and condition variables
-As it's easy for threads to share variables we open the pandora box for a whole plethora of problems like race conditions, mutexes,
-deadlocks, and so on. Luckily the C standard library offers tools to deal with those problems
+
+Shared memory comes with its own set of problems: race conditions, deadlocks, and other tricky concurrency issues.
+Fortunately, the C standard library provides tools like mutexes and condition variables to handle these challenges
+safely.
 
 ### Mutexes
-Suppose we have two threads and they share a variable counter between each other. Now what happens if thread 1 reads the variable
-then thread 2 reads the variable. They both increment the counter and write it back. But as thread 2 read the variable before thread 1 wrote back to it
-thread 2 now basically overwrites the value. Thus, instead of incrementing by two in the end the counter is incorrectly incremented only
-by 1. Luckily, there is a solution for this problem: mutexes. While in Java we have the `synchronized` key word the ensure
-thread safe variable access in C we can make use of mutexes from the pthreads api. Basically, whenever we reach a critical path in our program
-we need to first lock the mutex. Then we do our intended operation and unlock the variable again. This ensures that no other thread
-can read or write to that variable until the mutex is unlocked. Let's look at some code.
+
+Suppose two threads share the same variable between each other. If both read it, increment it, and write back to it
+without coordination,
+updates can override each other and produce invalid results. Luckily, there is a solution for this problem: mutexes.
+Whenever we update a shared variable we first acquire a mutex. Thus, no other thread can access the variable during that
+time.
+Then we do our intended operation and unlock the variable again. This ensures that we only one thread can perform the
+critical path
+at any point in time.
 
 ```c 
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <unistd.h>
-
-#define NUM_THREADS 10
-
-int counter = 0;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+int counter = 0;
 
 void *run_thread(void *arguments) {
     for (int i = 0; i < 100; i++) {
@@ -39,101 +33,124 @@ void *run_thread(void *arguments) {
         counter++;                    // increment safely
         pthread_mutex_unlock(&lock); // unlock after update
     }
-
-	return NULL;
-}
-
-int main() {
-    pthread_t pthreads[NUM_THREADS];
-    int thread_ids[NUM_THREADS];
-
-    for (int i = 0; i < NUM_THREADS; i++) {
-        thread_ids[i] = i;
-        pthread_create(&pthreads[i], NULL, run_thread, &thread_ids[i]);
-    }
-
-    for (int i = 0; i < NUM_THREADS; i++) {
-        pthread_join(pthreads[i], NULL);
-    }
-
-    printf("counter: %d\n", counter);
-    return 0;
 }
 ```
-Here we can see that before we increment the counter we lock and afterwards we release the lock. Thus, our update is now thread safe.
-
 
 ### Condition variables
-A common problem in computer science is the producer-consumer problem. In this scenario we have a producer that creates data
-and a consumer that needs to perform work on this data. In order to decouple the producer and the consumer we introduce a buffer
-that is shared between the producer and the consumer. Whenever the producer creates data it acquires a lock on the buffer, writes the data into it 
-and releases the lock again. On the other side the consumer checks the buffer for incoming data and as soon as data is on the buffer
-it acquires the lock removes data from the buffer, processes the data and then releases the lock. Now there are two cases
-where either the producer or the consumer could end up in a busy loop. If the buffer is full the, the producer would try to 
-put data into it every iteration. But as there is no more space on the buffer it cannot. So it's endlessly spinning insides
-it's while loop, always waiting for the buffer to have space. On the other side the same is true for the consumer. Whenever the buffer is empty
-it would endlessly wait for data to finally become available. This would was precious CPU resources, but luckily there is also a solution
-to this problem: condition variables and signals. Please be aware that this is only pseudo code in C syntax. Let's say we are listening
-on a socket to listen for incoming client requests. In a multithreaded setup we could spawn a thread pool with multiple consumers, and
-then have a single producer thread that waits for **new** incoming connections. Whenever a new connection is coming in 
-the producer would put the file descriptor of that socket onto a buffer shared with the consumers. As soon as the socket
-is put onto the buffer the consumers race for obtaining the socket from the buffer. The first one wins, acquires a lock and then processes
-the request. Now below you can see what happens if the buffer is full. The producer (main loop) has a while loop that checks
-whether the buf_size == MAX_CLIENTS. However, instead of endlessly spinning in this while loop it waits for a certain condition
-called `pthread_cond_wait(&cond_not_full, &lock)`. This means, that it is waiting for the buffer to be not full. But how will the producer 
-know about the buffer being not full once it is filled up completely? Well, that is the job of the consumer. Whenever, the consumer
-pops a file descriptor from the buffer it signals `pthread_cond_signal(&cond_not_full)` thus waking up the producer from its sleep.
-The same is true the other way around. The consumers are waiting until the buffer is not empty `pthread_cond_wait(&cond_not_empty, &lock)`.
-Once the producer signals that the buffer is not empty the consumers are picking up their work again. This is a very elegant
-way to avoid busy loops and massively decreases CPU consumption.
 
+In the classic producer-consumer setup a producer generates items and a consumer processes them using a shared buffer.
+A mutex can ensure mutually exclusive access on the buffer, but without condition variables the threads would be
+endlessly
+spinning whenever the buffer is empty or full.
+
+- The producer can only write data when the buffer is not full. It spins endlessly checking if the buffer is not full.
+- The consumer can only consume data when the buffer is not empty. It spins endless checking if the buffer is not empty.
+
+Condition variables solve this by letting a thread sleep until a condition is true. The consumer sleeps till the buffer
+is not empty.
+The producer sleeps until the buffer is not full. For letting a thread on a condition we use `pthread_cond_wait` and to
+wake
+another thread up from a condition we use `pthread_cond_signal`. We will explore a real scenario of condition variables
+in our HTTP server later on.
 
 ```c
-define BACKLOG 10
-#define MAX_CLIENTS 1024
-#define NUM_THREADS 10
-#define READ_BUF 1024
+#define MAX_BUF 10
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond_not_full = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_not_empty = PTHREAD_COND_INITIALIZER;
+pthread_cond_t not_full  = PTHREAD_COND_INITIALIZER;
+pthread_cond_t not_empty = PTHREAD_COND_INITIALIZER;
 
-int fd_buf[MAX_CLIENTS];
-int buf_size = 0;
+int buf[MAX_BUF];
+int n = 0;
 
-void *handle_request(void *arg) {
-	(void)arg;
-	pthread_t tid = pthread_self();
+/* Consumer */
+void *consume(void *arg) {
+    pthread_mutex_lock(&lock);
+    while (n == 0)
+        pthread_cond_wait(&not_empty, &lock);
 
-	while (1) {
-		int fd;
-		// condition variable; wait cond_not_empty
-		pthread_mutex_lock(&lock);
-		while (buf_size == 0) {
-			pthread_cond_wait(&cond_not_empty, &lock);		
-		}
-		
-		buf_size--;
-		fd = fd_buf[buf_size];
-
-		pthread_cond_signal(&cond_not_full);
-		pthread_mutex_unlock(&lock);
-
-		printf("worker: %lu request picked up\n", (unsigned long)tid);
-		handle_request(fd);
-		printf("worker: %lu request handled successfully\n", (unsigned long)tid);
-	}
+    int item = buf[--n];
+    pthread_cond_signal(&not_full);
+    pthread_mutex_unlock(&lock);
+    return NULL;
 }
+
+/* Producer */
+void produce(int item) {
+    pthread_mutex_lock(&lock);
+    while (n == MAX_BUF)
+        pthread_cond_wait(&not_full, &lock);
+
+    buf[n++] = item;
+    pthread_cond_signal(&not_empty);
+    pthread_mutex_unlock(&lock);
+}
+```
+
+This pattern eliminates busy loops and ensures both producer and consumer sleep efficiently until the buffer state
+allows progress.
+
+## Serving millions of clients concurrently
+
+In the early days servers were slow and could only handle a handful of clients at once. With the rise of the internet
+the demand exploded, and suddenly handling thousands of concurrent connections became a real problem.
+The obvious idea is: just spawn a thread per connection. But threads are heavy, expensive to create, and context
+switching destroys performance. So we need something smarter.
+
+The first improvement is a thread pool. Instead of creating a thread for every request, we create a fixed set of threads
+at startup and reuse them. This already avoids the worst overhead, but it still doesn’t scale massively. Threads remain
+expensive, and large numbers of them still slow the system down.
+
+Then nginx came along and changed the game by going fully event-loop based, built around the `poll`/`epoll` system
+calls.
+Instead of one thread per connection, you have one thread running an event loop that waits for events on many file
+descriptors at once. Igor Sysoev used this model to solve the famous C10K problem—serving ten thousand clients on a
+single machine.
+
+A single-threaded event loop is already fast, but you can go even further by combining both worlds: multithreading and
+polling. Imagine ten threads, each with its own poll loop and its own list of file descriptors. Each thread blocks until
+one of its descriptors becomes readable, handles the work, and goes back to polling. With this hybrid approach you can
+scale far beyond the old limits.
+
+Modern runtimes follow this pattern. Rust with Tokio uses worker threads + event loops. Go hides everything behind
+extremely lightweight goroutines. And Java eventually caught up with virtual threads. The goal is always the same: serve
+massive numbers of clients without paying the cost of one OS thread per connection.
+
+## Let's write our own HTTP server
+
+This week we explore threads by implementing a prethreaded HTTP server with a clear project structure: main server,
+router, request parsers, and handlers. We'll focus purely on the socket handling. The server works as follows:
+
+- One worker thread maintaining the server socket and accepts incoming connections.
+- The worker thread puts each incoming client connection into a buffer as long as there is space in the buffer
+  available.
+- Multiple worker threads that race to consume the incoming client connections, i.e. obtaining the client socket from
+  the buffer.
+- Condition variables to ensure that producer and consumer are not spinning in a busy loop when the buffer is full or
+  empty.
+
+### Producer loop
+
+The main thread (producer) accepts incoming client connections. For each connection, it acquires the lock and checks
+if the buffer is full. If the buffer is full, it waits until space becomes available. This follows the same pattern as
+in the condition variable section.
+
+```c 
+int fd_buf[MAX_CLIENTS];
 
 int main() {
 	pthread_t thread_ids[NUM_THREADS];
-	
-	for (int i = 0; i < NUM_THREADS; i++) {
-		pthread_create(&thread_ids[i], NULL, handle_request, NULL); 
-	}
+	signal(SIGPIPE, SIG_IGN);
 
 	while (1) {
+	
+		struct sockaddr_in client_addr = {0};
+		socklen_t socklen = sizeof(client_addr);
 		int client_fd = accept(fd, (struct sockaddr *)(&client_addr), &socklen);
+		if (client_fd == -1) {
+			perror("accept");
+			continue;
+		}
 
 		pthread_mutex_lock(&lock);
 		while (buf_size == MAX_CLIENTS) {
@@ -146,40 +163,85 @@ int main() {
 		pthread_cond_signal(&cond_not_empty);
 		pthread_mutex_unlock(&lock);
 	}
-	
-	for (int i = 0; i < NUM_THREADS; i++) {
-	    pthread_join(thread_ids[i], NULL);
+}
+```
+
+### Consumer loop
+
+Multiple consumer threads race to take file descriptors from the buffer. Each thread locks the buffer, waits if it is
+empty, pops a file descriptor, signals that there is space, unlocks, and then handles the HTTP request before closing
+the connection.
+
+```c 
+void *handle_request(void *arg) {
+	(void)arg;
+	pthread_t tid = pthread_self();
+
+	while (1) {
+		pthread_mutex_lock(&lock);
+		while (buf_size == 0) {
+			pthread_cond_wait(&cond_not_empty, &lock);		
+		}
+		
+		buf_size--;
+		fd = fd_buf[buf_size];
+
+		pthread_cond_signal(&cond_not_full);
+		pthread_mutex_unlock(&lock);
+
+		handle_http_request(fd);
+		if (close(fd) == -1) {
+			perror("close");
+		}
 	}
 }
 ```
 
-## Serving thousands of clients
-Back in the old days servers were slow. They could server only a couple of clients concurrently. With the widespread adoption
-of the internet the demand for handling multiple connections at the same time grew dramatically. The most simple solution would
-be to just throw threads at that task. But threads are heavy and have a large overhead. Especially creating threads for every incoming
-connection is costly. The first optimization is to use a thread pool utilizing the producer-consumer problem. In that scenario (as in the code above)
-a fixed amount of threads are created at program start. Thus, the name prethreaded. But also this does not scale massively as threads
-are expensive and especially context switching between threads is costly. Along came nginx and switching entirely to an event-loop based
-setup that utilizes the `poll` system call with an event loop. The founder of nginx Igor Sysoev used this design to solve the C10K problem. Serving
-ten thousand clients on the same machine. If you use a single thread for handling the event loop this is already fast but you can 
-achieve even greater results if you combine the two approaches multithreading and event loop. What if we have ten threads and each thread
-has its own list of file descriptors that it constantly `polls`, reading data only when it becomes available? Well with approach
-we can achieve even greater results and that is basically how for example Rust and Tokio work. In Go all this is nicely abstracted
-away by goroutines which are lightweight green threads that scale easily to millions of connections. Java caught up later with virtual threads.
+## Let's go for more speed
 
+Prethreading with a fixed set of worker threads speeds up the server compared to creating a new request per thread.
+We can go further by combining the thread pool with an event loop. In that scenario each thread runs its own event
+pool and handles dozens of client connections concurrently. During each loop it calls the `poll` system call which
+tells the worker which client sockets are ready to be read. The indication is stored in an array of `pollfd` structs.
 
-## Let's write our own HTTP server
-A couple of years ago I attempted this feat for the first time using an event loop based setup. I still remember how hard
-it was for me to wrap my head around pointers and dynamically allocating memory at that time. Now after a couple of weeks
-of exclusively using C this feels now much more natural. As this week's learning goal was threads I decided to write a prethreaded
-http server this time with a much better project structure and a more capable parser. I structured my project along the main http-server, a
-router, request parsers and handlers. This setup feels pretty good and if I wasn't too lazy to write tests it would also be a good
-setup to test each module in isolation.
+```c 
+struct pollfd {
+    int   fd;
+    short events;
+    short revents;
+};
+```
 
+After polling, we iterate the array and check `revents`. If it’s `POLLIN`, there’s data ready to read. If it’s `POLLHUP`
+or `POLLERR`, the client closed the connection or there was an error, and we can safely close the socket and remove it:
 
+```
+int polled = poll(clientpfds[id], nfds[id], POLL_TIMEOUT);
+if (polled == -1) {
+            perror("Failed to poll.");
+            continue;
+    }
+for (int i = 0; i < nfds[id]; i++) {
+    if (clientpfds[id][i].revents & POLLIN) {
+        handle_http_request(clientpfds[id][i].fd); // Handle the HTTP request
+    }
+    else if (clientpfds[id][i].revents & (POLLHUP | POLLERR)) {
+        pop_fd(clientpfds[id][i].fd, id); // Closes the socket and removes it from the array
+    }
+}
+```
+
+This setup can handle a huge number of connections efficiently. It’s not perfect—blocking operations in
+`handle_http_request` still stall the event loop—but for our learning server, it’s enough.
+
+## Wrapping up
+
+This week we covered a lot. We started with threads, explored mutexes for safe access to shared data, and saw how
+condition variables prevent busy loops. We then implemented a prethreaded HTTP server with a thread pool, and finally
+scaled it further by combining each thread pool with its own event loop.
 
 ## Caveats
-Don't use this in production. I know the code is not perfect, I never tested it with `valgrind` to rule out memory leaks and 
-I'm sure that it is very make this server crash and exploit it. But for a learning project it is an ideal scope and gives you
-a deep understanding of the HTTP protocol. Also string manipulation in C feels hard for me coming mainly Java background. But still
-it's nice to see how strings are working under the hood.
+
+This server is not production-ready. I haven’t tested it with `valgrind` for memory leaks, and it could crash or be
+exploited. But as a learning project, it’s ideal: it gives a deep understanding of HTTP, sockets, threads, and
+concurrency. Coming from a Java background, it’s also illuminating to see how strings work under the hood in C.

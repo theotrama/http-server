@@ -97,9 +97,6 @@ void *handle_request(void *arg) {
 	}
 }
 
-
-
-
 int main() {
 	pthread_t thread_ids[NUM_THREADS];
 	signal(SIGPIPE, SIG_IGN);

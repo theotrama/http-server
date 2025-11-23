@@ -123,7 +123,7 @@ void *handle_request(void *arg) {
             		continue;
         	}
 		for (int i = 0; i < nfds[id]; i++) {
-			if (clientpfds[id][i].revents & POLL_IN) {
+			if (clientpfds[id][i].revents & POLLIN) {
 				printf("worker: %d request picked up\n", id);
 				handle_http_request(clientpfds[id][i].fd);
 				printf("worker: %d request handled successfully\n", id);
