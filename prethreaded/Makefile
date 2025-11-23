@@ -3,7 +3,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -g
 
 # Source files
-SRCS = http-parser.c http-server.c http-router.c http-handlers.c http-response.c
+SRCS = http-parser.c async-server.c http-router.c http-handlers.c http-response.c
 
 # Object files
 OBJS = $(SRCS:.c=.o)

@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <poll.h>
 
 #include "http-parser.h"
 #include "http-router.h"
@@ -34,7 +35,7 @@ int thread_indices[NUM_THREADS];
 void add_fd(int fd, int tid) {
 
 	if (nfds[tid] >= MAX_POLL_FDS) {
-	    	close(new_fd);
+	    	close(fd);
 		errno = EMFILE;
     		perror("Thread full, rejecting connection");
 		return;
@@ -45,7 +46,7 @@ void add_fd(int fd, int tid) {
     		.events = POLLIN,
     		.revents = 0
 	};
-	clientpfds[i][nfds[tid]] = pfd;
+	clientpfds[tid][nfds[tid]] = pfd;
 	nfds[tid]++;
 }
 
@@ -104,7 +105,6 @@ int handle_http_request(int fd) {
 }
 
 void *handle_request(void *arg) {
-	pthread_t tid = pthread_self();
 	int id = *(int *)arg;
 	while (1) {
 		int fd;
@@ -128,7 +128,7 @@ void *handle_request(void *arg) {
 				handle_http_request(clientpfds[id][i].fd);
 				printf("worker: %d request handled successfully\n", id);
 			}
-			else if (clientpfds[id][i].revents & (POLLHUP | POLLERR)) {
+			else if (clientpfds[id][i].revents & (POLLHUP | POLLERR)) {
 				printf("worker: %d client disconnected. Clean up\n", id);
 				pop_fd(clientpfds[id][i].fd, id);
 				printf("worker: %d cleaned up successfully\n", id);
