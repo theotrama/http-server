@@ -3,14 +3,14 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -g -I../http
 
 # Source files
-SRCS = ../http/http-parser.c ../http/http-router.c ../http/http-handlers.c ../http/http-response.c http-server.c
+SRCS = ../http/http-parser.c ../http/http-router.c ../http/http-handlers.c ../http/http-response.c async-server.c
 
 # Object files in root
-OBJS = http-parser.o http-router.o http-handlers.o http-response.o http-server.o
+OBJS = http-parser.o http-router.o http-handlers.o http-response.o async-server.o
 
 # Output executables
-TARGET = http-server.r
-ASAN_TARGET = http-server.asan
+TARGET = async-server.r
+ASAN_TARGET = async-server.asan
 
 # Default target
 all: $(TARGET)

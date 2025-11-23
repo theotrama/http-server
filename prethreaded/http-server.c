@@ -10,8 +10,8 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#include "http-parser.h"
-#include "http-router.h"
+#include "../http/http-parser.h"
+#include "../http/http-router.h"
 
 #define BACKLOG 10
 #define MAX_CLIENTS 1024
