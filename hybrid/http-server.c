@@ -125,7 +125,9 @@ void *handle_request(void *arg) {
 		for (int i = 0; i < nfds[id]; i++) {
 			if (clientpfds[id][i].revents & POLLIN) {
 				printf("worker: %d request picked up\n", id);
-				handle_http_request(clientpfds[id][i].fd);
+				if (handle_http_request(clientpfds[id][i].fd) == 0) {
+					pop_fd(clientpfds[id][i].fd, id);
+				}
 				printf("worker: %d request handled successfully\n", id);
 			}
 			else if (clientpfds[id][i].revents & (POLLHUP | POLLERR)) {
