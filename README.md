@@ -215,7 +215,7 @@ struct pollfd {
 After polling, we iterate the array and check `revents`. If it’s `POLLIN`, there’s data ready to read. If it’s `POLLHUP`
 or `POLLERR`, the client closed the connection or there was an error, and we can safely close the socket and remove it:
 
-```
+```c
 int polled = poll(clientpfds[id], nfds[id], POLL_TIMEOUT);
 if (polled == -1) {
             perror("Failed to poll.");
