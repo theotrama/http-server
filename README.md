@@ -1,6 +1,6 @@
 # Threads, sockets, and HTTP
 
-This week we dove into threads. Last week, I explored processes and built a mini shell, so threads were the natural next
+Last week, I explored processes and built a mini shell, so threads were the natural next
 step. They let you introduce concurrency into your application without the heavy overhead of processes. Threads also
 make data sharing simpler: unlike processes, which have separate stacks, heaps, and variables and communicate only via
 IPC, threads share the same memory space within a process. Each thread belongs to a process, but there’s no hierarchy
